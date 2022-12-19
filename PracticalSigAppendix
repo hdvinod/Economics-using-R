@@ -1,0 +1,279 @@
+This appendix suggests cleaning up R memory and optional changes at the start of a session. You will need the command
+{\tt install.packages("..")} for all packages missing in the current
+installation of R before the following code will work.
+After the cleanup,
+please bring into the current memory
+of R all needed R packages by the command {\tt library(.)} .
+\begin{verbatim}
+rm(list=ls());date
+options(prompt=" "); options(continue="    ")
+library(generalCorr); library(np); library(NNS)
+options(np.messages = FALSE)
+library(randomForest); library(ShapleyValue)
+library(xtable) #for latex tables
+\end{verbatim}
+The options(.) commands above
+removes the R prompt `$>$' and replaces by simple blanks R symbol
+`+' to suggest
+a ``continuation'' of long commands spread over two or more lines.
+Getting rid of  the ($>$) prompts, and the (+) symbols allows
+a reader of an electronic version of my paper to simply copy and paste the code,  
+without having to manually eliminate ($>, +$) meaning `greater than' and addition, respectively, in the basic R code.
+
+
+\subsection{Psychologists' Effect Size Generalized $ES_{psyx}$ (m7)}
+\label{sec.m7code}
+The computation of effect size in psychology $ES_{psy}$ has only one
+response and only one binary regressor where some stimulus is
+either present or absent.  We generalize it as a general nonparametric
+kernel regression
+problem $p\ge2$ and denote it with an additional subscript `x' for extension
+in $ES_{psyx}$, as mentioned in the text of the paper.
+The algorithm makes all regressors binary (0,1 dummy)
+variables.   
+If we set {\tt ane=FALSE}, which is the default,
+kernel regression is fitted, and residuals are evaluated for regressing
+y on all other variables except xi.
+If we set the option {\tt ane=TRUE} fitted values of y upon
+regressing y on all other regressors (xj, j different from i) is
+simply the mean of y.
+
+The following code has a new function {\tt effSizCut(y,bigx)},
+which in turn requires an auxiliary function {\tt fncut(x)}
+to convert continuous data into binary using the median as the cutoff.
+The method (m7) cannot be implemented unless the following code
+is in the current memory of R.
+
+\begin{verbatim}
+fncut=function(x){
+mix=median(x)
+x[x<=mix]=0
+x[x>mix]=1
+return(x)}
+require(generalCorr)
+effSizCut=function(y,bigx, ane=FALSE){  #get t-stats
+p=NCOL(bigx)
+out=rep(NA,p)
+bigx2=apply(bigx,2,fncut)
+logi=apply(bigx2,2,as.logical)
+for ( i in 1:p){
+kxi=kern(dep.y=y, reg.x=bigx2[,i],residuals=TRUE)#r=resid
+rxi=residuals(kxi)#resid= (y - yhat) so yhat=(y-resid)
+xihat=y-rxi
+if(!ane){  kother=kern(dep.y=y, reg.x=bigx[,-i],residuals=TRUE)
+	rother=residuals(kother)
+	xotherhat=y-rother }
+if(ane) xotherhat=rep(mean(y,na.rm=TRUE),length(y))
+mylogi=logi[,i]
+myxi=xihat[mylogi]
+xibar=mean(myxi,na.rm=TRUE)
+xivar=var(myxi,na.rm=TRUE)
+#print(c("var-xi",xivar))
+myxo=xotherhat[mylogi]
+xobar=mean(myxo,na.rm=TRUE) #o=other
+xovar=var(myxo,na.rm=TRUE)
+#print(c("var-xk",xovar))
+tim1=length(myxi)-1  #Ti-1, where ti=Ti, m1=minus 1
+print(c("i,Ti-1= ",i,tim1))
+if(xivar<10e-9) denom=1 #var=variance
+if(xovar<10e-9) denom=1
+if(denom==1) print(c("t-stat=NA, zero var. col.No.",i))
+if(denom !=1)  {print(xivar,xovar)
+denom=sqrt(xivar/tim1+xovar/tim1) }
+out[i]=(xibar-xobar)/denom  }#end for loop
+return(out)   }
+#example
+attach(mtcars);y=mpg
+bigx=cbind(cyl,disp,hp,wt)
+effSizCut(y,bigx,ane=FLASE) #ane=FALSE => true control variables exist
+print(colnames(bigx))
+effSizCut(y,bigx, ane=TRUE) #ane setting=>true control variables ABSENT
+\end{verbatim}
+The function {\tt effSizCut(.)} reports a vector of t-stats 
+using Psychologists' effect sizes.  
+If there is degeneracy due to zero variance {\tt effSizCut(.)} reports the
+difference of means, which is sensitive to measurement units. 
+
+
+\subsection{R code for methods m1 to m13}
+\label{sec.Rsimu}
+The following code {\tt PraSig5(.)} computes m1 to m13 methods from data.
+It needs to be in memory to be able to do the simulation.
+
+\begin{verbatim}
+PracSig5=function(y,bigx){
+print("m1=ols coeff values")
+print("Linear regression focusing of statistical significance")
+p=NCOL(bigx)
+myp=1:p
+nam=colnames(bigx)
+if(length(nam)==0) nam=paste("x",eval(myp),sep="")
+print(nam)
+reg1=lm(y~bigx)
+
+print("compute m1=OLS coeff. values using original data")
+m1=coef(reg1)[2:(p+1)] #omit intercept coeff magnitudes
+print(m1)
+	
+print("compute m2=t-stat values")
+stu1x=summary(reg1)$coef[,3] #third col=t-values
+m2=stu1x[2:(p+1)]; print(m2)
+	
+print("m3=OLS regression coefficients on standardized data")
+sy=scale(y)
+sbigx=apply(bigx,2,scale) #data are standardized
+print("regression forced through origin, so NO intercept")
+reg2=lm(sy~sbigx-1); m3=coef(reg2)
+print("standardized regr coefficients=practical importance beta")
+print(m3)
+		
+m4=rep(NA,p); print("Pearson corr is m4")
+for (i in 1:p) m4[i]=cor(y,bigx[,i]); print(m4)
+		
+	
+m5=rep(NA,p); print("generalized corr max(r*ij, r*ji) is m5")
+for (i in 1:p) m5[i]=depMeas(y,bigx[,i]);print(m5)
+	
+print("m6=generalized partial correl. coeff")
+m6=as.vector(parcorVec(cbind(y,bigx))); print(m6)
+		
+#make sure effSizCut() is in current memory of R
+print("m7=effect size Psychology, force xi=(0,1) at median")
+m7=effSizCut(y,bigx); print(m7)
+		
+print("now m8 for local linear partials dy/dxi using np package")
+options(np.messages=FALSE)
+scaly=as.vector(scale(y))
+sbigx=apply(bigx,2,scale)
+m8=rep(NA,p) #place to store
+for ( i in 1:p){
+kxi=kern2(dep.y=y, reg.x=sbigx[,i],gradients=TRUE)
+m8[i]=apply(kxi$grad,2,mean) }
+print("np estimate of mean of derivatives standardized units")
+print(round(m8,3))
+		
+print("now m9 dy/dxi using NNS package")
+scaly=scale(y)
+sbigx=apply(bigx,2,scale)
+nnsout=dy.d_(x=sbigx, y=scaly[,1], wrt=1:p, 
+messages=FALSE, eval.points = "obs")
+lapply(nnsout["First",], mean)
+m9x= lapply(nnsout["First",], mean)
+m9=as.numeric(m9x); print(m9)
+		
+print("now m10 boost importance using NNS package")
+NNSb=NNS.boost(IVs.train = bigx, DV.train = y,status=FALSE,
+feature.importance = FALSE)
+m10=as.numeric(NNSb$feature.weights);print(m10)
+	
+print("now m11 Shapley measure of importance")
+if(colnames(bigx)[1]=="x1"){
+	xa=x1 #Only after replacing x1 notation the package works
+	bigxx=cbind(xa,x2,x3,x4)  
+	dbigx=as.data.frame(bigxx)}
+if(colnames(bigx)[1]!="x1"){
+dbigx=as.data.frame(bigx)}
+m11=as.numeric(shapleyvalue(y,dbigx)[2,]); print(m11)
+		
+print("now m12, m13 random forest measures of importance")
+set.seed(99)
+y.rf = randomForest(x=bigx,y=y, mtry=3,importance=TRUE)
+imp12=round(importance(y.rf), 3)
+m12=imp12[,1]; print(m12)
+m13=imp12[,2]; print(m13)
+	
+print("functions to sort regressor names")
+fn=function(x){nam[rev(order(abs(x)))]}
+fn0=function(x){nam[rev(order(x))]}
+	
+print("m1 to m6 values in one Table")
+require(xtable)
+v16=cbind(m1,m2,m3,m4,m5,m6)
+print(cbind(m1,m2,m3,m4,m5,m6),digits=4)
+print(xtable(v16,digits=4))
+
+aabs16=apply(cbind(m1,m2,m3,m4,m5,m6),2,fn)
+print("m1 to m6 sorted by absolute values")
+print(aabs16)
+print(xtable(aabs16,digits=4))
+print("m1 to m6 sorted by values as they are")
+a16=apply(cbind(m1,m2,m3,m4,m5,m6),2,fn0)
+print(a16)
+print(xtable(a16,digits=4))
+	
+print("m7 to m13 values in one Table")
+v713=cbind(m7,m8,m9,m10,m11,m12,m13)
+print(cbind(m7,m8,m9,m10,m11,m12,m13),digits=4)
+print(xtable(v713,digits=4))
+	
+aabs713=apply(cbind(m7,m8,m9,m10,m11,m12,m13),2,fn)
+print("m7 to m13 sorted by absolute values")
+print(aabs713)
+print(xtable(aabs713,digits=4))
+	
+print("m7 to m13 sorted by values as they are")
+a713=apply(cbind(m7,m8,m9,m10,m11,m12,m13),2,fn0)
+print(a713)
+print(xtable(a713,digits=4))
+	
+list(v16=v16,v713=v713,aabs16=aabs16,a16=a16,aabs713=aabs713,a713=a713)
+}
+#EXample
+# attach(mtcars);y=mpg
+# bigx=cbind(cyl,disp,hp,wt)
+# p5=PracSig5(y,bigx)
+# p5
+\end{verbatim}
+
+\subsection{R code reproducing Simulation Tables for methods m1 to m13}
+\label{sec.Rsimu}
+
+Simulation data having $T=15$ observations for
+$p=4$ regressors, fixed for all experiments, are created as follows.
+Using these data on R function
+{\tt pracSig5(.)}
+reproduces the simulation results in the paper.
+
+\begin{verbatim}
+rm(list=ls());date
+options(prompt=" "); options(continue="    ")
+
+library(generalCorr)
+options(np.messages = FALSE)
+library(randomForest)
+
+set.seed(99)
+x1=sample(1:15,replace = TRUE)
+x2=sample(2:16)
+x3=sample(3:17,replace = TRUE)
+x4=sample(4:18)
+bigx=cbind(x1,x2,x3,x4)
+nam=c("x1","x2","x3","x4")
+
+colnames(bigx)=c("x1","x2","x3","x4")
+fn=function(x){nam[rev(order(abs(x)))]}
+fn0=function(x){nam[rev(order(x))]}
+
+for (Expm in 1:3){
+##for (Expm in 2:2){
+print(c("Begin experiment number Expm=",Expm))
+if(Expm==1){
+y=sqrt(x1)+2*sqrt(x2)+3*sqrt(x3)+4*sqrt(x4)
+print("mean-y experiment 1")
+print(mean(y))
+PracSig5(y,bigx)}
+		
+if(Expm==2){
+y=(x1^0.1)*(x2^0.2)*(x3^0.3)*(x4^0.4)
+print("mean-y for experiment 2")
+print(mean(y))
+PracSig5(y,bigx)}
+		
+if(Expm==3){
+y=abs(sin(x1))+2*abs(sin(x2))+3*abs(sin(x3))+4*abs(sin(x4))
+print("mean-y for experiment 3")
+print(mean(y))
+PracSig5(y,bigx)}
+} #end for loop for Expm
+
+\end{verbatim}
